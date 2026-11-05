@@ -1,0 +1,32 @@
+{
+  "annotations": {
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "readOnlyHint": false,
+    "title": "Set auto-delete head branches"
+  },
+  "description": "Enable or disable automatically deleting head branches after pull requests are merged for a GitHub repository (the delete_branch_on_merge setting)",
+  "inputSchema": {
+    "properties": {
+      "enabled": {
+        "description": "Whether merged pull request head branches are automatically deleted",
+        "type": "boolean"
+      },
+      "owner": {
+        "description": "Repository owner (username or organization)",
+        "type": "string"
+      },
+      "repo": {
+        "description": "Repository name",
+        "type": "string"
+      }
+    },
+    "required": [
+      "owner",
+      "repo",
+      "enabled"
+    ],
+    "type": "object"
+  },
+  "name": "set_auto_delete_head_branches"
+}

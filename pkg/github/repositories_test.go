@@ -6877,3 +6877,203 @@ func Test_ListRepositoryCollaborators(t *testing.T) {
 		})
 	}
 }
+
+func Test_DisableBranchProtection(t *testing.T) {
+	// Verify tool definition once
+	serverTool := DisableBranchProtection(translations.NullTranslationHelper)
+	tool := serverTool.Tool
+	require.NoError(t, toolsnaps.Test(tool.Name, tool))
+
+	schema, ok := tool.InputSchema.(*jsonschema.Schema)
+	require.True(t, ok, "InputSchema should be *jsonschema.Schema")
+
+	assert.Equal(t, "disable_branch_protection", tool.Name)
+	assert.NotEmpty(t, tool.Description)
+	assert.Contains(t, schema.Properties, "owner")
+	assert.Contains(t, schema.Properties, "repo")
+	assert.Contains(t, schema.Properties, "branch")
+	assert.ElementsMatch(t, schema.Required, []string{"owner", "repo", "branch"})
+
+	tests := []struct {
+		name           string
+		mockedClient   *http.Client
+		requestArgs    map[string]any
+		expectError    bool
+		expectedErrMsg string
+	}{
+		{
+			name: "successful removal of branch protection",
+			mockedClient: NewMockedHTTPClient(
+				WithRequestMatchHandler(
+					DeleteReposBranchesProtectionByOwnerByRepoByBranch,
+					http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+						w.WriteHeader(http.StatusNoContent)
+					}),
+				),
+			),
+			requestArgs: map[string]any{
+				"owner":  "testowner",
+				"repo":   "testrepo",
+				"branch": "main",
+			},
+			expectError: false,
+		},
+		{
+			name: "removal of branch protection fails",
+			mockedClient: NewMockedHTTPClient(
+				WithRequestMatchHandler(
+					DeleteReposBranchesProtectionByOwnerByRepoByBranch,
+					http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+						w.WriteHeader(http.StatusForbidden)
+						_, _ = w.Write([]byte(`{"message": "Upgrade to GitHub Pro or make this repository public to enable this feature."}`))
+					}),
+				),
+			),
+			requestArgs: map[string]any{
+				"owner":  "testowner",
+				"repo":   "testrepo",
+				"branch": "main",
+			},
+			expectError:    true,
+			expectedErrMsg: "failed to disable branch protection",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			client := mustNewGHClient(t, tc.mockedClient)
+			deps := BaseDeps{
+				Client: client,
+			}
+			handler := serverTool.Handler(deps)
+
+			request := createMCPRequest(tc.requestArgs)
+
+			result, err := handler(ContextWithDeps(context.Background(), deps), &request)
+
+			if tc.expectError {
+				require.NotNil(t, result)
+				textResult, ok := result.Content[0].(*mcp.TextContent)
+				require.True(t, ok, "Expected text content")
+				assert.Contains(t, textResult.Text, tc.expectedErrMsg)
+			} else {
+				require.NoError(t, err)
+				require.NotNil(t, result)
+
+				textContent := getTextResult(t, result)
+				assert.Contains(t, textContent.Text, "Branch protection disabled for branch main in testowner/testrepo.")
+			}
+		})
+	}
+}
+
+func Test_SetAutoDeleteHeadBranches(t *testing.T) {
+	// Verify tool definition once
+	serverTool := SetAutoDeleteHeadBranches(translations.NullTranslationHelper)
+	tool := serverTool.Tool
+	require.NoError(t, toolsnaps.Test(tool.Name, tool))
+
+	schema, ok := tool.InputSchema.(*jsonschema.Schema)
+	require.True(t, ok, "InputSchema should be *jsonschema.Schema")
+
+	assert.Equal(t, "set_auto_delete_head_branches", tool.Name)
+	assert.NotEmpty(t, tool.Description)
+	assert.Contains(t, schema.Properties, "owner")
+	assert.Contains(t, schema.Properties, "repo")
+	assert.Contains(t, schema.Properties, "enabled")
+	assert.ElementsMatch(t, schema.Required, []string{"owner", "repo", "enabled"})
+
+	tests := []struct {
+		name           string
+		mockedClient   *http.Client
+		requestArgs    map[string]any
+		expectError    bool
+		expectedErrMsg string
+		expectedMsg    string
+	}{
+		{
+			name: "enable auto delete head branches",
+			mockedClient: NewMockedHTTPClient(
+				WithRequestMatchHandler(
+					PatchReposByOwnerByRepo,
+					http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+						w.WriteHeader(http.StatusOK)
+						_, _ = w.Write([]byte(`{"id": 1, "name": "testrepo", "full_name": "testowner/testrepo", "delete_branch_on_merge": true}`))
+					}),
+				),
+			),
+			requestArgs: map[string]any{
+				"owner":   "testowner",
+				"repo":    "testrepo",
+				"enabled": true,
+			},
+			expectError: false,
+			expectedMsg: "delete_branch_on_merge set to true",
+		},
+		{
+			name: "disable auto delete head branches",
+			mockedClient: NewMockedHTTPClient(
+				WithRequestMatchHandler(
+					PatchReposByOwnerByRepo,
+					http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+						w.WriteHeader(http.StatusOK)
+						_, _ = w.Write([]byte(`{"id": 1, "name": "testrepo", "full_name": "testowner/testrepo", "delete_branch_on_merge": false}`))
+					}),
+				),
+			),
+			requestArgs: map[string]any{
+				"owner":   "testowner",
+				"repo":    "testrepo",
+				"enabled": false,
+			},
+			expectError: false,
+			expectedMsg: "delete_branch_on_merge set to false",
+		},
+		{
+			name: "update fails",
+			mockedClient: NewMockedHTTPClient(
+				WithRequestMatchHandler(
+					PatchReposByOwnerByRepo,
+					http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+						w.WriteHeader(http.StatusNotFound)
+						_, _ = w.Write([]byte(`{"message": "Not Found"}`))
+					}),
+				),
+			),
+			requestArgs: map[string]any{
+				"owner":   "testowner",
+				"repo":    "nonexistent",
+				"enabled": true,
+			},
+			expectError:    true,
+			expectedErrMsg: "failed to update repository",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			client := mustNewGHClient(t, tc.mockedClient)
+			deps := BaseDeps{
+				Client: client,
+			}
+			handler := serverTool.Handler(deps)
+
+			request := createMCPRequest(tc.requestArgs)
+
+			result, err := handler(ContextWithDeps(context.Background(), deps), &request)
+
+			if tc.expectError {
+				require.NotNil(t, result)
+				textResult, ok := result.Content[0].(*mcp.TextContent)
+				require.True(t, ok, "Expected text content")
+				assert.Contains(t, textResult.Text, tc.expectedErrMsg)
+			} else {
+				require.NoError(t, err)
+				require.NotNil(t, result)
+
+				textContent := getTextResult(t, result)
+				assert.Contains(t, textContent.Text, tc.expectedMsg)
+			}
+		})
+	}
+}

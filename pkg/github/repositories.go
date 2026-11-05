@@ -947,6 +947,150 @@ func DeleteRepository(t translations.TranslationHelperFunc) inventory.ServerTool
 	return tool
 }
 
+// DisableBranchProtection creates a tool that removes branch protection from a branch.
+func DisableBranchProtection(t translations.TranslationHelperFunc) inventory.ServerTool {
+	return NewTool[DisableBranchProtectionInput, *RepositoryMessageOutput](
+		ToolsetMetadataRepos,
+		mcp.Tool{
+			Name:        "disable_branch_protection",
+			Description: t("TOOL_DISABLE_BRANCH_PROTECTION_DESCRIPTION", "Disable (remove) branch protection for a branch in a GitHub repository"),
+			Annotations: &mcp.ToolAnnotations{
+				Title:           t("TOOL_DISABLE_BRANCH_PROTECTION_USER_TITLE", "Disable branch protection"),
+				ReadOnlyHint:    false,
+				DestructiveHint: new(true),
+			},
+			InputSchema: &jsonschema.Schema{
+				Type: "object",
+				Properties: map[string]*jsonschema.Schema{
+					"owner": {
+						Type:        "string",
+						Description: "Repository owner (username or organization)",
+					},
+					"repo": {
+						Type:        "string",
+						Description: "Repository name",
+					},
+					"branch": {
+						Type:        "string",
+						Description: "Branch name to remove protection from",
+					},
+				},
+				Required: []string{"owner", "repo", "branch"},
+			},
+		},
+		scopes.RequireAll(scopes.Repo),
+		func(ctx context.Context, deps ToolDependencies, _ *mcp.CallToolRequest, input DisableBranchProtectionInput) (*mcp.CallToolResult, *RepositoryMessageOutput, error) {
+			owner := input.Owner
+			if owner == "" {
+				return utils.NewToolResultError("missing required parameter: owner"), nil, nil
+			}
+			repo := input.Repo
+			if repo == "" {
+				return utils.NewToolResultError("missing required parameter: repo"), nil, nil
+			}
+			branch := input.Branch
+			if branch == "" {
+				return utils.NewToolResultError("missing required parameter: branch"), nil, nil
+			}
+
+			client, err := deps.GetClient(ctx)
+			if err != nil {
+				return nil, nil, fmt.Errorf("failed to get GitHub client: %w", err)
+			}
+
+			resp, err := client.Repositories.RemoveBranchProtection(ctx, owner, repo, branch)
+			if err != nil {
+				return ghErrors.NewGitHubAPIErrorResponse(ctx,
+					fmt.Sprintf("failed to disable branch protection for branch %s in %s/%s", branch, owner, repo),
+					resp,
+					err,
+				), nil, nil
+			}
+			defer func() { _ = resp.Body.Close() }()
+
+			if resp.StatusCode != http.StatusNoContent {
+				body, err := io.ReadAll(resp.Body)
+				if err != nil {
+					return nil, nil, fmt.Errorf("failed to read response body: %w", err)
+				}
+				return ghErrors.NewGitHubAPIStatusErrorResponse(ctx, "failed to disable branch protection", resp, body), nil, nil
+			}
+
+			message := fmt.Sprintf("Branch protection disabled for branch %s in %s/%s.", branch, owner, repo)
+			return utils.NewToolResultText(message), &RepositoryMessageOutput{Message: message}, nil
+		},
+	)
+}
+
+// SetAutoDeleteHeadBranches creates a tool that enables or disables the
+// repository setting that automatically deletes head branches after a pull
+// request is merged (delete_branch_on_merge).
+func SetAutoDeleteHeadBranches(t translations.TranslationHelperFunc) inventory.ServerTool {
+	return NewTool[SetAutoDeleteHeadBranchesInput, *AutoDeleteHeadBranchesOutput](
+		ToolsetMetadataRepos,
+		mcp.Tool{
+			Name:        "set_auto_delete_head_branches",
+			Description: t("TOOL_SET_AUTO_DELETE_HEAD_BRANCHES_DESCRIPTION", "Enable or disable automatically deleting head branches after pull requests are merged for a GitHub repository (the delete_branch_on_merge setting)"),
+			Annotations: &mcp.ToolAnnotations{
+				Title:           t("TOOL_SET_AUTO_DELETE_HEAD_BRANCHES_USER_TITLE", "Set auto-delete head branches"),
+				ReadOnlyHint:    false,
+				DestructiveHint: new(false),
+				IdempotentHint:  true,
+			},
+			InputSchema: &jsonschema.Schema{
+				Type: "object",
+				Properties: map[string]*jsonschema.Schema{
+					"owner": {
+						Type:        "string",
+						Description: "Repository owner (username or organization)",
+					},
+					"repo": {
+						Type:        "string",
+						Description: "Repository name",
+					},
+					"enabled": {
+						Type:        "boolean",
+						Description: "Whether merged pull request head branches are automatically deleted",
+					},
+				},
+				Required: []string{"owner", "repo", "enabled"},
+			},
+		},
+		scopes.RequireAll(scopes.Repo),
+		func(ctx context.Context, deps ToolDependencies, _ *mcp.CallToolRequest, input SetAutoDeleteHeadBranchesInput) (*mcp.CallToolResult, *AutoDeleteHeadBranchesOutput, error) {
+			owner := input.Owner
+			if owner == "" {
+				return utils.NewToolResultError("missing required parameter: owner"), nil, nil
+			}
+			repo := input.Repo
+			if repo == "" {
+				return utils.NewToolResultError("missing required parameter: repo"), nil, nil
+			}
+
+			client, err := deps.GetClient(ctx)
+			if err != nil {
+				return nil, nil, fmt.Errorf("failed to get GitHub client: %w", err)
+			}
+
+			repository, resp, err := client.Repositories.Edit(ctx, owner, repo, &github.Repository{
+				DeleteBranchOnMerge: github.Ptr(input.Enabled),
+			})
+			if err != nil {
+				return ghErrors.NewGitHubAPIErrorResponse(ctx,
+					fmt.Sprintf("failed to update repository %s/%s", owner, repo),
+					resp,
+					err,
+				), nil, nil
+			}
+			defer func() { _ = resp.Body.Close() }()
+
+			resulting := repository.GetDeleteBranchOnMerge()
+			message := fmt.Sprintf("Repository %s/%s now has delete_branch_on_merge set to %t.", owner, repo, resulting)
+			return utils.NewToolResultText(message), &AutoDeleteHeadBranchesOutput{Message: message, DeleteBranchOnMerge: resulting}, nil
+		},
+	)
+}
+
 func repositoryIDForDeletion(ctx context.Context, client *github.Client, owner, repo string) (int64, *mcp.CallToolResult) {
 	repository, resp, err := client.Repositories.Get(ctx, owner, repo)
 	if err != nil {

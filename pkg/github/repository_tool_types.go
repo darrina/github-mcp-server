@@ -124,6 +124,23 @@ type RepositoryMessageOutput struct {
 	Message string `json:"message"`
 }
 
+type DisableBranchProtectionInput struct {
+	Owner  string `json:"owner"`
+	Repo   string `json:"repo"`
+	Branch string `json:"branch"`
+}
+
+type SetAutoDeleteHeadBranchesInput struct {
+	Owner   string `json:"owner"`
+	Repo    string `json:"repo"`
+	Enabled bool   `json:"enabled"`
+}
+
+type AutoDeleteHeadBranchesOutput struct {
+	Message             string `json:"message"`
+	DeleteBranchOnMerge bool   `json:"delete_branch_on_merge"`
+}
+
 type RepositoryCollaboratorsOutput struct {
 	FirstPage int                   `json:"firstPage"`
 	Items     []MinimalCollaborator `json:"items"`

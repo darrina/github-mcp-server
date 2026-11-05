@@ -1,0 +1,32 @@
+{
+  "annotations": {
+    "destructiveHint": true,
+    "idempotentHint": false,
+    "readOnlyHint": false,
+    "title": "Disable branch protection"
+  },
+  "description": "Disable (remove) branch protection for a branch in a GitHub repository",
+  "inputSchema": {
+    "properties": {
+      "branch": {
+        "description": "Branch name to remove protection from",
+        "type": "string"
+      },
+      "owner": {
+        "description": "Repository owner (username or organization)",
+        "type": "string"
+      },
+      "repo": {
+        "description": "Repository name",
+        "type": "string"
+      }
+    },
+    "required": [
+      "owner",
+      "repo",
+      "branch"
+    ],
+    "type": "object"
+  },
+  "name": "disable_branch_protection"
+}

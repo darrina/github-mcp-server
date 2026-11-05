@@ -1421,6 +1421,12 @@ For negotiated supported protocol versions `2026-07-28` or newer, the consolidat
   - `owner`: Repository owner (username or organization) (string, required)
   - `repo`: Repository name (string, required)
 
+- **disable_branch_protection** - Disable branch protection
+  - **OAuth Challenge Scopes**: `repo`
+  - `branch`: Branch name to remove protection from (string, required)
+  - `owner`: Repository owner (username or organization) (string, required)
+  - `repo`: Repository name (string, required)
+
 - **fork_repository** - Fork repository
   - **OAuth Challenge Scopes**: `repo`
   - `organization`: Organization to fork to (string, optional)
@@ -1538,6 +1544,12 @@ For negotiated supported protocol versions `2026-07-28` or newer, the consolidat
   - `perPage`: Results per page for pagination (min 1, max 100) (number, optional)
   - `query`: Repository search query. Examples: 'machine learning in:name stars:>1000 language:python', 'topic:react', 'user:facebook'. Supports advanced search syntax for precise filtering. (string, required)
   - `sort`: Sort repositories by field, defaults to best match (string, optional)
+
+- **set_auto_delete_head_branches** - Set auto-delete head branches
+  - **OAuth Challenge Scopes**: `repo`
+  - `enabled`: Whether merged pull request head branches are automatically deleted (boolean, required)
+  - `owner`: Repository owner (username or organization) (string, required)
+  - `repo`: Repository name (string, required)
 
 </details>
 
